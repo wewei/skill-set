@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "mcp-framework": "^0.2.2",
+    "vectra": "^0.10.0",
     "zod": "^3.24.3"
   },
   "devDependencies": {
