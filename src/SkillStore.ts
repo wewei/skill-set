@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { connect, Index } from "@lancedb/lancedb"
+import { connect, Connection, Index } from "@lancedb/lancedb";
 import { Schema, Field, Utf8, FixedSizeList, Float32 } from "apache-arrow";
 import OpenAI from "openai";
 
@@ -16,36 +16,55 @@ export type ApiConfig = {
   dimensions: number; // Dimension of the skill vector
 };
 
-export async function makeStore(root: string, {
-  model,
-  baseURL,
-  apiKey,
-  dimensions,
-}: ApiConfig) {
+async function ensureSkillTable(db: Connection) {
+  if (!(await db.tableNames()).includes("skills")) {
+    const skills = await db.createTable("skills", [], {
+      schema: new Schema([
+        new Field(
+          "embedding",
+          new FixedSizeList(1536, new Field("item", new Float32(), false)),
+          false
+        ),
+        new Field("task", new Utf8(), false),
+        new Field("prompt", new Utf8(), false),
+      ]),
+    });
+
+    skills.createIndex("task");
+    skills.createIndex("embedding", {
+      config: Index.ivfPq(),
+    });
+  }
+  return db.openTable("skills");
+}
+
+export async function makeStore(
+  root: string,
+  { model, baseURL, apiKey, dimensions }: ApiConfig
+) {
   // Ensure the directory exists
   await ensureDir(root);
 
   const db = await connect(root);
 
-  const skills = await db.createTable("skills", [], {
-    schema: new Schema([
-      new Field("embedding", new FixedSizeList(dimensions, new Field("item", new Float32(), false)), false),
-      new Field("task", new Utf8(), false),
-      new Field("prompt", new Utf8(), false),
-    ])
-  });
+  if (!(await db.tableNames()).includes("skills")) {
+    await db.createTable("skills", [], {
+      schema: new Schema([
+        new Field(
+          "embedding",
+          new FixedSizeList(
+            dimensions,
+            new Field("item", new Float32(), false)
+          ),
+          false
+        ),
+        new Field("task", new Utf8(), false),
+        new Field("prompt", new Utf8(), false),
+      ]),
+    });
+  }
 
-  // skills.createIndex("task", {
-  //   config: Index.fts(),
-  // });
-
-  // skills.createIndex("embedding", {
-  //   config: Index.ivfPq({
-  //     distanceType: "cosine",
-  //     numPartitions: 10,
-  //     numSubVectors: 16,
-  //   }),
-  // });
+  const skills = await ensureSkillTable(db);
 
   const openai = new OpenAI({
     baseURL,
@@ -87,11 +106,15 @@ export async function makeStore(root: string, {
   }
 
   async function rename(task: string, newTask: string): Promise<void> {
-    if (task === newTask) { return; }
+    if (task === newTask) {
+      return;
+    }
 
     const result = await skills
       .query()
-      .where(`task == ${JSON.stringify(task)} OR task == ${JSON.stringify(newTask)}`)
+      .where(
+        `task == ${JSON.stringify(task)} OR task == ${JSON.stringify(newTask)}`
+      )
       .toArray();
 
     if (!result.find((r) => r.task === task)) {
@@ -103,8 +126,6 @@ export async function makeStore(root: string, {
     await write(newTask, result[0].prompt);
     await skills.delete(`task == ${JSON.stringify(task)}`);
   }
-
-
 
   return {
     write,
