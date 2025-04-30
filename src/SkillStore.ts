@@ -35,17 +35,17 @@ export async function makeStore(root: string, {
     ])
   });
 
-  skills.createIndex("task", {
-    config: Index.fts(),
-  });
+  // skills.createIndex("task", {
+  //   config: Index.fts(),
+  // });
 
-  skills.createIndex("embedding", {
-    config: Index.ivfPq({
-      distanceType: "cosine",
-      numPartitions: 10,
-      numSubVectors: 16,
-    }),
-  });
+  // skills.createIndex("embedding", {
+  //   config: Index.ivfPq({
+  //     distanceType: "cosine",
+  //     numPartitions: 10,
+  //     numSubVectors: 16,
+  //   }),
+  // });
 
   const openai = new OpenAI({
     baseURL,
